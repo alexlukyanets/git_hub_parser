@@ -1,7 +1,6 @@
-import json
 import logging
 import time
-from typing import Iterable
+from typing import Iterable, Set, Optional, Dict
 
 import requests
 import scrapy
@@ -10,13 +9,13 @@ from spiders.git_hub_parser import GitHubParser
 
 logger = logging.getLogger(__name__)
 
-
 class GitHubCrawler(scrapy.Spider):
-    name = "git_hub_crawler"
-    bad_keys_file = "bad_api_keys.txt"
-    good_keys_file = "good_api_keys.txt"
+    name: str = "git_hub_crawler"
+    bad_keys_file: str = "bad_api_keys.txt"
+    good_keys_file: str = "good_api_keys.txt"
+    cookies_file: str = "cookies.txt"
 
-    custom_settings = {
+    custom_settings: Dict[str, int] = {
         'CONCURRENT_REQUESTS': 1,
         'DOWNLOAD_DELAY': 4,
         'RETRY_TIMES': 1}
@@ -26,31 +25,32 @@ class GitHubCrawler(scrapy.Spider):
         self.parser = GitHubParser
         self.bad_keys = self.load_bad_keys()
         self.good_keys = self.load_good_keys()
+        self.cookies = self.load_cookies()
 
-    def load_bad_keys(self):
+    def load_bad_keys(self) -> Set[str]:
         try:
             with open(self.bad_keys_file, 'r') as file:
                 return set(file.read().splitlines())
         except FileNotFoundError:
             return set()
 
-    def load_good_keys(self):
+    def load_good_keys(self) -> Set[str]:
         try:
             with open(self.good_keys_file, 'r') as file:
                 return set(file.read().splitlines())
         except FileNotFoundError:
             return set()
 
-    def save_bad_key(self, key):
+    def save_bad_key(self, key: str) -> None:
         with open(self.bad_keys_file, 'a') as file:
             file.write(f"{key}\n")
 
-    def save_good_key(self, key):
+    def save_good_key(self, key: str) -> None:
         with open(self.good_keys_file, 'a') as file:
             file.write(f"{key}\n")
 
     @staticmethod
-    def headers():
+    def headers() -> Dict[str, str]:
         return {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -66,17 +66,29 @@ class GitHubCrawler(scrapy.Spider):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
         }
 
+    def load_cookies(self) -> Optional[Dict[str, str]]:
+        try:
+            with open(self.cookies_file, 'r') as file:
+                cookies_str: str  = file.read().strip()
+                if not cookies_str:
+                    return
+                return self.cookies_str_to_dict(cookies_str)
+        except FileNotFoundError:
+            logger.error(f"Cookie file {self.cookies_file} not found.")
+            return
+
     @staticmethod
-    def cookies_str_to_dict() -> dict:
-        cookies_str = '_octo=GH1.1.2075056958.1703699842; _device_id=ee77df2a11ce416fb4be1184dafcf721; saved_user_sessions=42610852%3AGHWG8ObTMCET0cY_hFPYE2mn71CvmsCRYjXRdImUqQQw234A; user_session=GHWG8ObTMCET0cY_hFPYE2mn71CvmsCRYjXRdImUqQQw234A; __Host-user_session_same_site=GHWG8ObTMCET0cY_hFPYE2mn71CvmsCRYjXRdImUqQQw234A; logged_in=yes; dotcom_user=alexlukyanets; has_recent_activity=1; color_mode=%7B%22color_mode%22%3A%22dark%22%2C%22light_theme%22%3A%7B%22name%22%3A%22light%22%2C%22color_mode%22%3A%22light%22%7D%2C%22dark_theme%22%3A%7B%22name%22%3A%22dark%22%2C%22color_mode%22%3A%22dark%22%7D%7D; preferred_color_mode=dark; tz=Europe%2FKiev; _gh_sess=4t5ulwV%2F6A%2FWkQRBTaiUSUWRGnX3%2B40se%2Flzy4PpcM6XzxPsYObhZM7JIXpiE3AF8LmqUFmizZ9PmCHohYQk4jI8ZlJdY8sxujciZs10OkCdmRxVO4Lo57LP%2FiVXU%2FiqSaugPkf1wrkRIKA%2FsHqkl02u4kF0y8pVcq92trxcBOzRSjul8HmG%2Foid5tuo%2FsRuQbRDnKban%2BwChet8GAZyEmRnbTgDXl02fshkfhSi2tKwmcpu4V1OsiXjYglmMXE5nDPxTqHA73Mk9f%2FqwicrfF6TJwsVeBxapRgorXyTChWJSsS7Ae%2Fr8MFGSWoq%2B%2Ff9AF8kPC0k2A1Li16eGAszsPGHedJAbSa%2FtF3Yew%3D%3D--lFcHCSDBadBeD3EW--Ybn7d0rhnvomsUl6qB%2FU7Q%3D%3D'
+    def cookies_str_to_dict(cookies_str: str) -> Optional[dict]:
         splitted_cookies_str = cookies_str.split(';')
+        if len(splitted_cookies_str) == 1:
+            return
         return dict([item.split('=', 1) for item in splitted_cookies_str])
 
     def start_requests(self) -> Iterable[scrapy.Request]:
         for page in range(1, 6):
             yield scrapy.Request(
                 url=f'https://github.com/search?q=GOOGLE_MAP+API_KEY+AIzaSy&type=code&p={page}',
-                cookies=self.cookies_str_to_dict(),
+                cookies=self.cookies,
                 headers=self.headers(),
                 callback=self.parse_page)
 
